@@ -1,0 +1,63 @@
+#!/bin/bash
+if [ $# -lt 1 ]; then
+    echo 'usage: -[n number of geometries] -[a anharmonic correction, default=0.95] -[t temperature, deault=300] -[o output format, could be any format supported by obabel, default=gjf] gauout.log'
+    exit 1
+fi
+while getopts ":n:a:o:t:" opt
+do
+    case $opt in
+        n) NGEOM=$OPTARG;;
+        a) ANHF=$OPTARG;;
+        t) TEMP=$OPTARG;;
+        o) OUTF=$OPTARG;;
+        ?) echo 'usage: -[n number of geometries] -[a anharmonic correction, default=0.95] -[t temperature, deault=300] -[o output format, could be any format supported by obabel, default=gjf] gauout.log'
+        exit 1;;
+    esac
+done
+shift $(($OPTIND - 1))
+
+if [[ -z "$ANHF" ]];then
+    ANHF=0.95
+fi
+if [[ -z "$TEMP" ]];then
+    TEMP=300
+fi
+if [[ -z "$NGEOM" ]];then
+    NGEOM=200
+fi
+if [[ -z "$OUTF" ]];then
+    OUTF=gjf
+fi
+while [[ $# -ge 1 ]]
+do
+echo -e "100\n2\n2\ngeom.xyz" | Multiwfn $1
+xyz2nx < geom.xyz
+natom=$(grep -c '' geom)
+cp $1 gaussian.log
+cat << EOF > initqp_input
+&dat
+ nact = 2
+ numat = $natom
+ npoints = $NGEOM
+ file_geom = geom
+ iprog = 4
+ file_nmodes = $1
+ anh_f = $ANHF
+ temp = $TEMP
+ ics_flg = n
+ chk_e = 0
+ iseed = -1
+ lvprt = 1
+/
+EOF
+initcond.pl > initcond.log
+basename=${1/.log/}
+mkdir $basename
+mv final_output $basename
+cd $basename
+echo -e "0 \n 100" | finaloutput2dynmld.pl
+obabel -i xyz dyn.mld -m -o $OUTF -O osc
+for f in hod[0-9]*; do mv $f `printf hod%04d.gjf ${f#hod}`; done
+cd ..
+shift 1
+done 
